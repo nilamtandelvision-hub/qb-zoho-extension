@@ -110,6 +110,25 @@ app.get('/qb/callback', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
+// DISCONNECT ROUTE
+// ─────────────────────────────────────────
+app.get('/disconnect', (req, res) => {
+    qbTokens = null;
+    zohoTokens = null;
+    qbRealmId = null;
+    console.log('🔌 Disconnected from QuickBooks and Zoho CRM');
+    res.send(`
+        <html>
+        <body style="font-family:Arial; text-align:center; padding:40px;">
+            <h2>✅ Successfully Disconnected</h2>
+            <p>QuickBooks Sync has been disconnected.</p>
+            <a href="/">Go Back</a>
+        </body>
+        </html>
+    `);
+});
+
+// ─────────────────────────────────────────
 // ZOHO AUTH ROUTES
 // ─────────────────────────────────────────
 app.get('/zoho/auth', (req, res) => {
