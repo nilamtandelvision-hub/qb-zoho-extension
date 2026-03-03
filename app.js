@@ -47,10 +47,6 @@ app.get('/', (req, res) => {
     <a href="/qb/auth"><button>Connect QuickBooks</button></a>
     <br/><br/>
     <a href="/zoho/auth"><button>Connect Zoho CRM</button></a>
-    <br/><br/>
-    <a href="/sync/customers"><button>Sync Customers → Zoho Contacts</button></a>
-    <br/><br/>
-    <a href="/sync/invoices"><button>Sync Invoices → Zoho Deals</button></a>
   `);
 });
 
