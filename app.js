@@ -107,27 +107,45 @@ app.get('/zoho/callback', async (req, res) => {
 // ─────────────────────────────────────────
 app.get('/sync/customers', async (req, res) => {
     if (!qbTokens || !zohoTokens) {
-        return res.send('❌ Please connect both QuickBooks and Zoho CRM first! <a href="/">Go Back</a>');
+        return res.send('❌ Please connect both accounts first! <a href="/">Go Back</a>');
     }
     try {
-        await syncCustomers(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
-        res.send('✅ Customers synced successfully! <a href="/">Go Back</a>');
+        const result = await syncCustomers(
+            qbTokens.access_token,
+            qbRealmId,
+            zohoTokens.access_token
+        );
+        res.send(`
+      ✅ Customer Sync Complete!
+      Created: ${result.created}
+      Updated: ${result.updated}
+      Failed: ${result.failed}
+      <a href="/">Go Back</a>
+    `);
     } catch (err) {
-        console.error('Sync Error:', err);
-        res.status(500).send('Sync failed. Check console for details.');
+        res.status(500).send('Sync failed.');
     }
 });
 
 app.get('/sync/invoices', async (req, res) => {
     if (!qbTokens || !zohoTokens) {
-        return res.send('❌ Please connect both QuickBooks and Zoho CRM first! <a href="/">Go Back</a>');
+        return res.send('❌ Please connect both accounts first! <a href="/">Go Back</a>');
     }
     try {
-        await syncInvoices(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
-        res.send('✅ Invoices synced successfully! <a href="/">Go Back</a>');
+        const result = await syncInvoices(
+            qbTokens.access_token,
+            qbRealmId,
+            zohoTokens.access_token
+        );
+        res.send(`
+      ✅ Invoice Sync Complete!
+      Created: ${result.created}
+      Updated: ${result.updated}
+      Failed: ${result.failed}
+      <a href="/">Go Back</a>
+    `);
     } catch (err) {
-        console.error('Sync Error:', err);
-        res.status(500).send('Sync failed. Check console for details.');
+        res.status(500).send('Sync failed.');
     }
 });
 
