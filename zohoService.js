@@ -27,10 +27,10 @@ async function createZohoContact(zohoToken, customer) {
                 Mailing_Zip: customer.BillAddr?.PostalCode || "",
 
                 // 🔑 KEY FIELD
-                QB_Customer_ID: customer.Id
+                QuickBooks_Customer_ID: customer.Id
             }
         ],
-        duplicate_check_fields: ["QB_Customer_ID"]
+        duplicate_check_fields: ["QuickBooks_Customer_ID"]
     };
 
     const response = await axios.post(
@@ -59,10 +59,10 @@ async function createZohoDeal(zohoToken, invoice) {
                     invoice.DueDate || new Date().toISOString().split("T")[0],
 
                 // 🔑 KEY FIELD
-                QB_Invoice_ID: invoice.Id
+                QuickBooks_Invoice_ID: invoice.Id
             }
         ],
-        duplicate_check_fields: ["QB_Invoice_ID"]
+        duplicate_check_fields: ["QuickBooks_Invoice_ID"]
     };
 
     const response = await axios.post(
