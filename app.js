@@ -161,8 +161,8 @@ cron.schedule('0 */2 * * *', async () => {
 // ─────────────────────────────────────────
 // START SERVER
 // ─────────────────────────────────────────
-const PORT = 3000;
-app.listen(PORT, () => {
-    console.log(`\n🚀 Server running at http://localhost:${PORT}`);
-    console.log(`   Visit http://localhost:${PORT} to get started\n`);
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
 });
