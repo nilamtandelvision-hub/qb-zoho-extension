@@ -1,9 +1,9 @@
 const express = require('express');
 const cron = require('node-cron');
 const cors = require('cors');
-const { getAuthUrl, getToken, oauthClient } = require('./qbAuth');
-const { getZohoAuthUrl, getZohoToken } = require('./zohoAuth');
-const { syncCustomers, syncInvoices } = require('./sync');
+const { getAuthUrl, getToken, oauthClient } = require('./qbAuth');           // qbAuth.js
+const { getZohoAuthUrl, getZohoToken } = require('./zohoAuth');         // zohoAuth.js
+const { syncCustomers, syncInvoices } = require('./sync');             // sync.js
 require('dotenv').config();
 
 const app = express();
@@ -20,12 +20,12 @@ let qbRealmId = null;
 
 // ─────────────────────────────────────────────────────────
 //  HOME PAGE
-//  ✅ STEP 1 ONLY — Connect QuickBooks + Zoho CRM once
+//  ✅ STEP 1 ONLY — Connect QuickBooks here (one-time)
+//  Zoho CRM is auto-connected inside the widget — no button needed
 //  All sync buttons live in the Zoho CRM widget (frontend)
 // ─────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
     const qbOk = qbTokens !== null;
-    const zohoOk = zohoTokens !== null;
 
     res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -49,19 +49,19 @@ app.get('/', (req, res) => {
                   margin-bottom:10px; background:#fafafa; }
     .status-row.connected    { background:#f0fff4; border-color:#28a745; }
     .status-row.disconnected { background:#fff5f5; border-color:#f0d0d0; }
+    .status-row.auto         { background:#f0f4ff; border-color:#a0b4f0; }
     .status-row .name  { font-size:14px; font-weight:600; color:#333; }
     .status-row .badge { font-size:12px; font-weight:600; }
     .status-row.connected    .badge { color:#28a745; }
     .status-row.disconnected .badge { color:#dc3545; }
+    .status-row.auto         .badge { color:#3355cc; }
     hr.divider { border:none; border-top:1.5px solid #f0f0f0; margin:22px 0; }
     .btn { display:block; width:100%; padding:13px 16px; border:none; border-radius:9px;
            font-size:14px; font-weight:600; cursor:pointer; text-align:center;
            text-decoration:none; margin-bottom:10px; transition:opacity 0.2s, transform 0.2s; }
     .btn:hover { opacity:0.88; transform:translateY(-1px); }
-    .btn-blue   { background:#0070C0; color:white; }
-    .btn-purple { background:#6c3fc5; color:white; }
-    .btn-done   { background:#e8f5e9; color:#2e7d32; border:1.5px solid #a5d6a7;
-                  cursor:default; }
+    .btn-blue { background:#0070C0; color:white; }
+    .btn-done { background:#e8f5e9; color:#2e7d32; border:1.5px solid #a5d6a7; cursor:default; }
     .btn-done:hover { opacity:1; transform:none; }
     .note { margin-top:22px; background:#fffbea; border:1.5px solid #ffe082;
             border-radius:9px; padding:12px 14px; font-size:12px; color:#7a5f00; line-height:1.6; }
@@ -73,7 +73,7 @@ app.get('/', (req, res) => {
     <div class="header">
       <div class="icon">⚡</div>
       <h1>QuickBooks ↔ Zoho CRM</h1>
-      <p>One-time account setup. Sync is managed from the Zoho CRM widget.</p>
+      <p>One-time setup. Connect QuickBooks to get started.</p>
     </div>
 
     <div class="step-label">🔌 Connection Status</div>
@@ -81,28 +81,24 @@ app.get('/', (req, res) => {
       <span class="name">🏦 QuickBooks</span>
       <span class="badge">${qbOk ? '✅ Connected' : '❌ Not Connected'}</span>
     </div>
-    <div class="status-row ${zohoOk ? 'connected' : 'disconnected'}">
+    <div class="status-row auto">
       <span class="name">🔗 Zoho CRM</span>
-      <span class="badge">${zohoOk ? '✅ Connected' : '❌ Not Connected'}</span>
+      <span class="badge">🔵 Auto-connected in widget</span>
     </div>
 
     <hr class="divider"/>
 
-    <div class="step-label">🔑 Step 1 — Connect Your Accounts</div>
-
+    <div class="step-label">🔑 Step 1 — Connect QuickBooks</div>
     ${qbOk
             ? `<div class="btn btn-done">✅ QuickBooks Connected</div>`
             : `<a href="/qb/auth" class="btn btn-blue">🔑 Connect QuickBooks</a>`
         }
-    ${zohoOk
-            ? `<div class="btn btn-done">✅ Zoho CRM Connected</div>`
-            : `<a href="/zoho/auth" class="btn btn-purple">🔗 Connect Zoho CRM</a>`
-        }
 
     <div class="note">
-      <strong>✅ After connecting both accounts:</strong>
+      <strong>ℹ️ Why no Zoho CRM button?</strong>
+      Zoho CRM connects automatically inside the widget — you are already logged into Zoho CRM when you open the widget, so no separate login is needed.<br/><br/>
+      <strong>✅ After connecting QuickBooks:</strong>
       Open the <strong>QuickBooks Sync widget</strong> inside Zoho CRM to sync your data.
-      This page is for one-time setup only — no sync buttons here.
     </div>
   </div>
 </body>
