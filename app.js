@@ -8,25 +8,110 @@ require('dotenv').config();
 
 const app = express();
 
-// ─────────────────────────────────────────
-// CORS — Allow all origins for public use
-// ─────────────────────────────────────────
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: false
-}));
+app.use(cors({ origin: '*', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json());
 
-// Store tokens temporarily
+// ─────────────────────────────────────────────────────────
+//  IN-MEMORY TOKEN STORE
+// ─────────────────────────────────────────────────────────
 let qbTokens = null;
 let zohoTokens = null;
 let qbRealmId = null;
 
-// ─────────────────────────────────────────
-// STATUS ROUTE
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+//  HOME PAGE
+//  ✅ STEP 1 ONLY — Connect QuickBooks + Zoho CRM once
+//  All sync buttons live in the Zoho CRM widget (frontend)
+// ─────────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+    const qbOk = qbTokens !== null;
+    const zohoOk = zohoTokens !== null;
+
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>QB ↔ Zoho Setup</title>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Segoe UI',Arial,sans-serif; background:#f0f4f8; min-height:100vh;
+           display:flex; align-items:center; justify-content:center; padding:20px; }
+    .card { background:white; border-radius:14px; padding:36px 32px; max-width:420px;
+            width:100%; box-shadow:0 4px 24px rgba(0,0,0,0.10); }
+    .header { text-align:center; margin-bottom:28px; }
+    .header .icon { font-size:36px; margin-bottom:8px; }
+    .header h1 { font-size:20px; color:#0070C0; font-weight:700; }
+    .header p  { font-size:13px; color:#888; margin-top:4px; }
+    .step-label { font-size:10px; font-weight:700; color:#999; text-transform:uppercase;
+                  letter-spacing:0.8px; margin-bottom:12px; }
+    .status-row { display:flex; align-items:center; justify-content:space-between;
+                  padding:12px 14px; border-radius:10px; border:1.5px solid #e0e0e0;
+                  margin-bottom:10px; background:#fafafa; }
+    .status-row.connected    { background:#f0fff4; border-color:#28a745; }
+    .status-row.disconnected { background:#fff5f5; border-color:#f0d0d0; }
+    .status-row .name  { font-size:14px; font-weight:600; color:#333; }
+    .status-row .badge { font-size:12px; font-weight:600; }
+    .status-row.connected    .badge { color:#28a745; }
+    .status-row.disconnected .badge { color:#dc3545; }
+    hr.divider { border:none; border-top:1.5px solid #f0f0f0; margin:22px 0; }
+    .btn { display:block; width:100%; padding:13px 16px; border:none; border-radius:9px;
+           font-size:14px; font-weight:600; cursor:pointer; text-align:center;
+           text-decoration:none; margin-bottom:10px; transition:opacity 0.2s, transform 0.2s; }
+    .btn:hover { opacity:0.88; transform:translateY(-1px); }
+    .btn-blue   { background:#0070C0; color:white; }
+    .btn-purple { background:#6c3fc5; color:white; }
+    .btn-done   { background:#e8f5e9; color:#2e7d32; border:1.5px solid #a5d6a7;
+                  cursor:default; }
+    .btn-done:hover { opacity:1; transform:none; }
+    .note { margin-top:22px; background:#fffbea; border:1.5px solid #ffe082;
+            border-radius:9px; padding:12px 14px; font-size:12px; color:#7a5f00; line-height:1.6; }
+    .note strong { display:block; margin-bottom:4px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="icon">⚡</div>
+      <h1>QuickBooks ↔ Zoho CRM</h1>
+      <p>One-time account setup. Sync is managed from the Zoho CRM widget.</p>
+    </div>
+
+    <div class="step-label">🔌 Connection Status</div>
+    <div class="status-row ${qbOk ? 'connected' : 'disconnected'}">
+      <span class="name">🏦 QuickBooks</span>
+      <span class="badge">${qbOk ? '✅ Connected' : '❌ Not Connected'}</span>
+    </div>
+    <div class="status-row ${zohoOk ? 'connected' : 'disconnected'}">
+      <span class="name">🔗 Zoho CRM</span>
+      <span class="badge">${zohoOk ? '✅ Connected' : '❌ Not Connected'}</span>
+    </div>
+
+    <hr class="divider"/>
+
+    <div class="step-label">🔑 Step 1 — Connect Your Accounts</div>
+
+    ${qbOk
+            ? `<div class="btn btn-done">✅ QuickBooks Connected</div>`
+            : `<a href="/qb/auth" class="btn btn-blue">🔑 Connect QuickBooks</a>`
+        }
+    ${zohoOk
+            ? `<div class="btn btn-done">✅ Zoho CRM Connected</div>`
+            : `<a href="/zoho/auth" class="btn btn-purple">🔗 Connect Zoho CRM</a>`
+        }
+
+    <div class="note">
+      <strong>✅ After connecting both accounts:</strong>
+      Open the <strong>QuickBooks Sync widget</strong> inside Zoho CRM to sync your data.
+      This page is for one-time setup only — no sync buttons here.
+    </div>
+  </div>
+</body>
+</html>`);
+});
+
+// ─────────────────────────────────────────────────────────
+//  STATUS API — polled by widget every 30s
+// ─────────────────────────────────────────────────────────
 app.get('/status', (req, res) => {
     res.json({
         qbConnected: qbTokens !== null,
@@ -34,174 +119,88 @@ app.get('/status', (req, res) => {
     });
 });
 
-// ─────────────────────────────────────────
-// HOME PAGE
-// ─────────────────────────────────────────
-app.get('/', (req, res) => {
-    res.send(`
-    <html>
-    <head>
-      <title>QB ↔ Zoho Connector</title>
-      <style>
-        body { font-family: Arial, sans-serif; max-width: 600px;
-               margin: 40px auto; padding: 20px; }
-        h1 { color: #0070C0; }
-        .status { padding: 10px; border-radius: 5px; margin: 5px 0; }
-        .connected { background: #d4edda; color: #155724; }
-        .disconnected { background: #f8d7da; color: #721c24; }
-        button { padding: 10px 20px; margin: 8px 0; width: 100%;
-                 background: #0070C0; color: white; border: none;
-                 border-radius: 5px; cursor: pointer; font-size: 14px; }
-        .section { margin: 20px 0; padding: 15px;
-                   border: 1px solid #ddd; border-radius: 8px; }
-      </style>
-    </head>
-    <body>
-      <h1>⚡ QB ↔ Zoho CRM Connector</h1>
-      <div class="section">
-        <h3>🔌 Connection Status</h3>
-        <div class="status ${qbTokens ? 'connected' : 'disconnected'}">
-          QuickBooks: ${qbTokens ? '✅ Connected' : '❌ Not Connected'}
-        </div>
-        <div class="status ${zohoTokens ? 'connected' : 'disconnected'}">
-          Zoho CRM: ${zohoTokens ? '✅ Connected' : '❌ Not Connected'}
-        </div>
-      </div>
-      <div class="section">
-        <h3>🔑 Step 1 — Connect</h3>
-        <a href="/qb/auth"><button>Connect QuickBooks</button></a>
-        <a href="/zoho/auth"><button>Connect Zoho CRM</button></a>
-      </div>
-      <div class="section">
-        <h3>🔄 Step 2 — Sync</h3>
-        <a href="/sync/customers"><button>Sync Customers → Contacts</button></a>
-        <a href="/sync/invoices"><button>Sync Invoices → Deals</button></a>
-      </div>
-      <div class="section">
-        <h3>⏰ Auto Sync</h3>
-        <p>Runs every 2 hours automatically.</p>
-      </div>
-    </body>
-    </html>
-  `);
-});
-
-// ─────────────────────────────────────────
-// QUICKBOOKS AUTH ROUTES
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+//  QUICKBOOKS AUTH
+// ─────────────────────────────────────────────────────────
 app.get('/qb/auth', (req, res) => {
-    const authUrl = getAuthUrl();
-    console.log('Redirecting to QB Auth:', authUrl);
-    res.redirect(authUrl);
+    res.redirect(getAuthUrl());
 });
 
 app.get('/qb/callback', async (req, res) => {
     try {
         const fullUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-        const token = await getToken(fullUrl);
-        qbTokens = token;
+        qbTokens = await getToken(fullUrl);
         qbRealmId = oauthClient.getToken().realmId;
         console.log('✅ QuickBooks Connected! Realm ID:', qbRealmId);
-        res.redirect('/');
+        res.send(`<!DOCTYPE html><html><body style="font-family:Arial;text-align:center;padding:40px">
+          <h2>✅ QuickBooks Connected!</h2><p>You can close this window.</p>
+          <script>
+            if(window.opener){window.opener.postMessage('qb_connected','*');setTimeout(()=>window.close(),1500);}
+            else{setTimeout(()=>{window.location='/';},1500);}
+          </script>
+        </body></html>`);
     } catch (err) {
         console.error('QB Auth Error:', err);
         res.status(500).send('QuickBooks authentication failed.');
     }
 });
 
-// ─────────────────────────────────────────
-// DISCONNECT ROUTE
-// ─────────────────────────────────────────
-app.get('/disconnect', (req, res) => {
-    qbTokens = null;
-    zohoTokens = null;
-    qbRealmId = null;
-    console.log('🔌 Disconnected from QuickBooks and Zoho CRM');
-    res.send(`
-        <html>
-        <body style="font-family:Arial; text-align:center; padding:40px;">
-            <h2>✅ Successfully Disconnected</h2>
-            <p>QuickBooks Sync has been disconnected.</p>
-            <a href="/">Go Back</a>
-        </body>
-        </html>
-    `);
-});
-
-// ─────────────────────────────────────────
-// ZOHO AUTH ROUTES
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+//  ZOHO AUTH
+// ─────────────────────────────────────────────────────────
 app.get('/zoho/auth', (req, res) => {
-    const authUrl = getZohoAuthUrl();
-    console.log('Redirecting to Zoho Auth:', authUrl);
-    res.redirect(authUrl);
+    res.redirect(getZohoAuthUrl());
 });
 
 app.get('/zoho/callback', async (req, res) => {
     try {
         const code = req.query.code;
-        if (!code) throw new Error('No auth code received from Zoho');
+        if (!code) throw new Error('No auth code from Zoho');
         zohoTokens = await getZohoToken(code);
         console.log('✅ Zoho CRM Connected!');
-        res.redirect('/');
+        res.send(`<!DOCTYPE html><html><body style="font-family:Arial;text-align:center;padding:40px">
+          <h2>✅ Zoho CRM Connected!</h2><p>You can close this window.</p>
+          <script>
+            if(window.opener){window.opener.postMessage('zoho_connected','*');setTimeout(()=>window.close(),1500);}
+            else{setTimeout(()=>{window.location='/';},1500);}
+          </script>
+        </body></html>`);
     } catch (err) {
         console.error('Zoho Auth Error:', err);
         res.status(500).send('Zoho CRM authentication failed.');
     }
 });
 
-// ─────────────────────────────────────────
-// SYNC ROUTES
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+//  SYNC ROUTES — triggered by widget buttons only
+// ─────────────────────────────────────────────────────────
 app.get('/sync/customers', async (req, res) => {
-    if (!qbTokens || !zohoTokens) {
-        return res.send('❌ Please connect both accounts first! <a href="/">Go Back</a>');
-    }
+    if (!qbTokens || !zohoTokens)
+        return res.status(401).json({ error: 'Both accounts must be connected first.' });
     try {
-        const result = await syncCustomers(
-            qbTokens.access_token,
-            qbRealmId,
-            zohoTokens.access_token
-        );
-        res.send(`
-            ✅ Customer Sync Complete! <br/>
-            ✅ Created: ${result.created} <br/>
-            🔄 Updated: ${result.updated} <br/>
-            ❌ Failed: ${result.failed} <br/>
-            <a href="/">Go Back</a>
-        `);
+        const result = await syncCustomers(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
+        res.json(result); // { created, updated, failed }
     } catch (err) {
-        console.error('Sync Error:', err);
-        res.status(500).send('Sync failed. Check console for details.');
+        console.error('Customer Sync Error:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
 app.get('/sync/invoices', async (req, res) => {
-    if (!qbTokens || !zohoTokens) {
-        return res.send('❌ Please connect both accounts first! <a href="/">Go Back</a>');
-    }
+    if (!qbTokens || !zohoTokens)
+        return res.status(401).json({ error: 'Both accounts must be connected first.' });
     try {
-        const result = await syncInvoices(
-            qbTokens.access_token,
-            qbRealmId,
-            zohoTokens.access_token
-        );
-        res.send(`
-            ✅ Invoice Sync Complete! <br/>
-            ✅ Created: ${result.created} <br/>
-            🔄 Updated: ${result.updated} <br/>
-            ❌ Failed: ${result.failed} <br/>
-            <a href="/">Go Back</a>
-        `);
+        const result = await syncInvoices(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
+        res.json(result); // { created, updated, failed }
     } catch (err) {
-        console.error('Sync Error:', err);
-        res.status(500).send('Sync failed. Check console for details.');
+        console.error('Invoice Sync Error:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// ─────────────────────────────────────────
-// AUTO SYNC EVERY 2 HOURS
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+//  AUTO SYNC every 2 hours
+// ─────────────────────────────────────────────────────────
 cron.schedule('0 */2 * * *', async () => {
     if (qbTokens && zohoTokens) {
         console.log('⏰ Auto sync started...');
@@ -209,14 +208,15 @@ cron.schedule('0 */2 * * *', async () => {
         await syncInvoices(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
         console.log('⏰ Auto sync complete!');
     } else {
-        console.log('⏰ Auto sync skipped - accounts not connected.');
+        console.log('⏰ Auto sync skipped — not connected.');
     }
 });
 
-// ─────────────────────────────────────────
-// START SERVER
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+//  START
+// ─────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 Server running on port ${PORT}`);
+    console.log(`   Visit your backend URL to connect QB + Zoho accounts`);
 });
