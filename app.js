@@ -100,6 +100,14 @@ app.get('/', (req, res) => {
   `);
 });
 
+app.get('/disconnect', (req, res) => {
+    qbTokens = null;
+    zohoTokens = null;
+    qbRealmId = null;
+    console.log('🔌 Disconnected all accounts');
+    res.redirect('/');
+});
+
 // ─────────────────────────────────────────
 // QUICKBOOKS AUTH ROUTES
 // ─────────────────────────────────────────
