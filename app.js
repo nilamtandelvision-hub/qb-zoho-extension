@@ -43,21 +43,30 @@ app.get('/', (req, res) => {
     <head>
       <title>QB ↔ Zoho Connector</title>
       <style>
-        body { font-family: Arial, sans-serif; max-width: 600px;
+        body { font-family: Arial, sans-serif; max-width: 500px;
                margin: 40px auto; padding: 20px; }
-        h1 { color: #0070C0; }
-        .status { padding: 10px; border-radius: 5px; margin: 5px 0; }
+        h1 { color: #0070C0; text-align: center; }
+        .status { padding: 12px; border-radius: 8px; margin: 8px 0;
+                  font-weight: bold; }
         .connected { background: #d4edda; color: #155724; }
         .disconnected { background: #f8d7da; color: #721c24; }
-        button { padding: 10px 20px; margin: 8px 0; width: 100%;
+        button { padding: 12px 20px; margin: 8px 0; width: 100%;
                  background: #0070C0; color: white; border: none;
-                 border-radius: 5px; cursor: pointer; font-size: 14px; }
+                 border-radius: 8px; cursor: pointer; font-size: 15px; }
+        button:hover { background: #005a9e; }
         .section { margin: 20px 0; padding: 15px;
-                   border: 1px solid #ddd; border-radius: 8px; }
+                   border: 1px solid #ddd; border-radius: 10px; }
+        .subtitle { text-align: center; color: #666; margin-top: -10px; }
+        .both-connected { background: #d4edda; color: #155724;
+                          padding: 12px; border-radius: 8px;
+                          text-align: center; font-weight: bold;
+                          margin-top: 10px; }
       </style>
     </head>
     <body>
-      <h1>⚡ QB ↔ Zoho CRM Connector</h1>
+      <h1>⚡ QB ↔ Zoho CRM</h1>
+      <p class="subtitle">QuickBooks Sync for Zoho CRM</p>
+
       <div class="section">
         <h3>🔌 Connection Status</h3>
         <div class="status ${qbTokens ? 'connected' : 'disconnected'}">
@@ -66,21 +75,26 @@ app.get('/', (req, res) => {
         <div class="status ${zohoTokens ? 'connected' : 'disconnected'}">
           Zoho CRM: ${zohoTokens ? '✅ Connected' : '❌ Not Connected'}
         </div>
+        ${qbTokens && zohoTokens ?
+            '<div class="both-connected">🎉 Both connected! Sync is active.</div>'
+            : ''}
       </div>
+
       <div class="section">
-        <h3>🔑 Step 1 — Connect</h3>
-        <a href="/qb/auth"><button>Connect QuickBooks</button></a>
-        <a href="/zoho/auth"><button>Connect Zoho CRM</button></a>
+        <h3>🔑 Connect Accounts</h3>
+        ${!qbTokens ?
+            '<a href="/qb/auth"><button>🔗 Connect QuickBooks</button></a>' :
+            '<button style="background:#28a745;">✅ QuickBooks Connected</button>'
+        }
+        ${!zohoTokens ?
+            '<a href="/zoho/auth"><button style="background:#e44d26;">🔗 Connect Zoho CRM</button></a>' :
+            '<button style="background:#28a745;">✅ Zoho CRM Connected</button>'
+        }
+        ${qbTokens || zohoTokens ?
+            '<a href="/disconnect"><button style="background:#dc3545;">🔌 Disconnect All</button></a>'
+            : ''}
       </div>
-      <div class="section">
-        <h3>🔄 Step 2 — Sync</h3>
-        <a href="/sync/customers"><button>Sync Customers → Contacts</button></a>
-        <a href="/sync/invoices"><button>Sync Invoices → Deals</button></a>
-      </div>
-      <div class="section">
-        <h3>⏰ Auto Sync</h3>
-        <p>Runs every 2 hours automatically.</p>
-      </div>
+
     </body>
     </html>
   `);
