@@ -32,17 +32,25 @@ async function createZohoContact(zohoToken, customer) {
         ],
         duplicate_check_fields: ["QuickBooks_Customer_ID"]
     };
+    try {
+        const response = await axios.post(
+            `${ZOHO_API_BASE}/Contacts/upsert`,
+            payload,
+            { headers: authHeader(zohoToken) }
+        );
 
-    const response = await axios.post(
-        `${ZOHO_API_BASE}/Contacts/upsert`,
-        payload,
-        { headers: authHeader(zohoToken) }
-    );
+        // ✅ ADD THIS - log response
+        console.log('📥 Zoho Response:', JSON.stringify(response.data, null, 2));
 
-    const action = response.data.data[0].details.action;
-    console.log(`✅ Contact ${action.toUpperCase()}: ${customer.DisplayName}`);
+        const action = response.data.data[0].details.action;
+        console.log(`✅ Contact ${action.toUpperCase()}: ${customer.DisplayName}`);
+        return { action };
 
-    return { action };
+    } catch (err) {
+        // ✅ ADD THIS - log full error
+        console.error('❌ Zoho Contact Error:', err.response?.data || err.message);
+        throw err;
+    }
 }
 
 // ─────────────────────────────────────────
