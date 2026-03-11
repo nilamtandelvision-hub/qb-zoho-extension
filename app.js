@@ -1,10 +1,12 @@
 const express = require('express');
 const cron = require('node-cron');
 const cors = require('cors');
+const fs = require('fs');
 const { getAuthUrl, getToken, oauthClient } = require('./qbAuth');
 const { getZohoAuthUrl, getZohoToken } = require('./zohoAuth');
 const { syncCustomers, syncInvoices } = require('./sync');
 const { handleWebhook } = require('./webhook');
+const { saveTokens, loadTokens } = require('./config/tokens');
 require('dotenv').config();
 
 const app = express();
@@ -34,6 +36,7 @@ app.use((req, res, next) => {
             } catch (e) {
                 req.body = {};
             }
+            console.log("📩 Webhook received:", req.body);
             next();
         });
     } else {
@@ -47,6 +50,20 @@ app.use((req, res, next) => {
 let qbTokens = null;
 let zohoTokens = null;
 let qbRealmId = null;
+
+const savedTokens = loadTokens();
+
+if (savedTokens) {
+    qbTokens = savedTokens.qbTokens;
+    qbRealmId = savedTokens.qbRealmId;
+    zohoTokens = savedTokens.zohoTokens;
+
+    global.qbTokens = qbTokens;
+    global.qbRealmId = qbRealmId;
+    global.zohoTokens = zohoTokens;
+
+    console.log("✅ Tokens loaded from storage");
+}
 
 // ─────────────────────────────────────────
 // WEBHOOK ROUTE
@@ -134,13 +151,23 @@ app.get('/', (req, res) => {
 // DISCONNECT
 // ─────────────────────────────────────────
 app.get('/disconnect', (req, res) => {
+
     qbTokens = null;
     zohoTokens = null;
     qbRealmId = null;
+
     global.qbTokens = null;
     global.qbRealmId = null;
     global.zohoTokens = null;
+
+    // ✅ delete saved tokens file
+    if (fs.existsSync('./config/tokens.json')) {
+        fs.unlinkSync('./config/tokens.json');
+        console.log("🗑️ tokens.json removed");
+    }
+
     console.log('🔌 Disconnected all accounts');
+
     res.redirect('/');
 });
 
@@ -158,9 +185,16 @@ app.get('/qb/callback', async (req, res) => {
         const fullUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
         const token = await getToken(fullUrl);
         qbTokens = token;
-        qbRealmId = oauthClient.getToken().realmId;
+        qbRealmId = req.query.realmId;
         global.qbTokens = qbTokens;
         global.qbRealmId = qbRealmId;
+        // ✅ SAVE TOKENS
+        saveTokens({
+            qbTokens,
+            qbRealmId,
+            zohoTokens
+        });
+
         console.log('✅ QuickBooks Connected! Realm ID:', qbRealmId);
         res.redirect('/');
     } catch (err) {
@@ -184,6 +218,13 @@ app.get('/zoho/callback', async (req, res) => {
         if (!code) throw new Error('No auth code received from Zoho');
         zohoTokens = await getZohoToken(code);
         global.zohoTokens = zohoTokens;
+        // ✅ SAVE TOKENS
+        saveTokens({
+            qbTokens,
+            qbRealmId,
+            zohoTokens
+        });
+
         console.log('✅ Zoho CRM Connected!');
         res.redirect('/');
     } catch (err) {
