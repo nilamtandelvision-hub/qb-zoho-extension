@@ -1,6 +1,4 @@
 const axios = require('axios');
-require('dotenv').config();
-
 // Generate Zoho Auth URL
 function getZohoAuthUrl() {
     const params = new URLSearchParams({

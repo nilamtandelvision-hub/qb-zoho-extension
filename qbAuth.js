@@ -1,5 +1,4 @@
 const OAuthClient = require('intuit-oauth');
-require('dotenv').config();
 
 const oauthClient = new OAuthClient({
     clientId: process.env.QB_CLIENT_ID,

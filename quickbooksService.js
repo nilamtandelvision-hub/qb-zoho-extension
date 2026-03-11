@@ -1,5 +1,4 @@
 const QuickBooks = require('node-quickbooks');
-require('dotenv').config();
 
 // Create QuickBooks client instance
 function getQBClient(accessToken, realmId) {
