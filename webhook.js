@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { syncSingleCustomer } = require('./sync');
 const { refreshToken } = require('./qbAuth');
 const { refreshZohoToken } = require('./zohoAuth');
+const { saveTokens } = require('./config/tokens');
 
 // ─────────────────────────────────────────
 // FIX #2 — Verify signature from QuickBooks
@@ -26,6 +27,13 @@ async function getValidQBToken() {
     try {
         const refreshed = await refreshToken(global.qbTokens?.refresh_token);
         global.qbTokens = refreshed;
+
+        saveTokens({
+            qbTokens: global.qbTokens,
+            qbRealmId: global.qbRealmId,
+            zohoTokens: global.zohoTokens
+        });
+
         return refreshed.access_token;
     } catch (err) {
         console.error('❌ QB token refresh failed:', err.message);
@@ -41,6 +49,13 @@ async function getValidZohoToken() {
     try {
         const refreshed = await refreshZohoToken(global.zohoTokens?.refresh_token);
         global.zohoTokens = { ...global.zohoTokens, ...refreshed };
+
+        saveTokens({
+            qbTokens: global.qbTokens,
+            qbRealmId: global.qbRealmId,
+            zohoTokens: global.zohoTokens
+        });
+
         return refreshed.access_token;
     } catch (err) {
         console.error('❌ Zoho token refresh failed:', err.message);
@@ -54,6 +69,11 @@ async function getValidZohoToken() {
 // ─────────────────────────────────────────
 async function handleWebhook(req, res) {
     const signature = req.headers['intuit-signature'];
+    if (!signature) {
+        console.warn("⚠️ Missing QuickBooks webhook signature");
+        return res.status(400).send("Missing signature");
+    }
+
 
     // FIX #2 — Verify the request is from QuickBooks
     if (!verifySignature(req.rawBody || JSON.stringify(req.body), signature)) {
