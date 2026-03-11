@@ -5,13 +5,25 @@ const { refreshZohoToken } = require('./zohoAuth');
 const { saveTokens } = require('./config/tokens');
 
 // ─────────────────────────────────────────
-// FIX #2 — Verify signature from QuickBooks
-// Prevents fake/malicious webhook requests
+// Guard against duplicate events
+// ─────────────────────────────────────────
+const processedEvents = new Set();
+
+function isDuplicate(eventKey) {
+    if (processedEvents.has(eventKey)) return true;
+    processedEvents.add(eventKey);
+    // Clean up after 10 minutes to avoid memory leak
+    setTimeout(() => processedEvents.delete(eventKey), 10 * 60 * 1000);
+    return false;
+}
+
+// ─────────────────────────────────────────
+// Verify signature from QuickBooks
 // ─────────────────────────────────────────
 function verifySignature(rawBody, signature) {
     if (!process.env.QB_WEBHOOK_VERIFIER_TOKEN) {
         console.warn('⚠️ QB_WEBHOOK_VERIFIER_TOKEN not set — skipping verification');
-        return true; // allow through if token not configured yet
+        return true;
     }
     const hash = crypto
         .createHmac('sha256', process.env.QB_WEBHOOK_VERIFIER_TOKEN)
@@ -21,45 +33,39 @@ function verifySignature(rawBody, signature) {
 }
 
 // ─────────────────────────────────────────
-// FIX #5 — Auto-refresh QB token if expired
+// Auto-refresh QB token if expired
 // ─────────────────────────────────────────
 async function getValidQBToken() {
     try {
         const refreshed = await refreshToken(global.qbTokens?.refresh_token);
         global.qbTokens = refreshed;
-
         saveTokens({
             qbTokens: global.qbTokens,
             qbRealmId: global.qbRealmId,
             zohoTokens: global.zohoTokens
         });
-
         return refreshed.access_token;
     } catch (err) {
         console.error('❌ QB token refresh failed:', err.message);
-        // Fall back to existing token
         return global.qbTokens?.access_token;
     }
 }
 
 // ─────────────────────────────────────────
-// FIX #5 — Auto-refresh Zoho token if expired
+// Auto-refresh Zoho token if expired
 // ─────────────────────────────────────────
 async function getValidZohoToken() {
     try {
         const refreshed = await refreshZohoToken(global.zohoTokens?.refresh_token);
         global.zohoTokens = { ...global.zohoTokens, ...refreshed };
-
         saveTokens({
             qbTokens: global.qbTokens,
             qbRealmId: global.qbRealmId,
             zohoTokens: global.zohoTokens
         });
-
         return refreshed.access_token;
     } catch (err) {
         console.error('❌ Zoho token refresh failed:', err.message);
-        // Fall back to existing token
         return global.zohoTokens?.access_token;
     }
 }
@@ -69,23 +75,22 @@ async function getValidZohoToken() {
 // ─────────────────────────────────────────
 async function handleWebhook(req, res) {
     const signature = req.headers['intuit-signature'];
+
     if (!signature) {
-        console.warn("⚠️ Missing QuickBooks webhook signature");
-        return res.status(400).send("Missing signature");
+        console.warn('⚠️ Missing QuickBooks webhook signature');
+        return res.status(400).send('Missing signature');
     }
 
-
-    // FIX #2 — Verify the request is from QuickBooks
+    // Verify the request is from QuickBooks
     if (!verifySignature(req.rawBody || JSON.stringify(req.body), signature)) {
         console.error('❌ Invalid webhook signature — request rejected');
         return res.status(401).send('Unauthorized');
     }
 
-    // FIX #3 — Respond 200 IMMEDIATELY before any processing
-    // QuickBooks requires response within 3 seconds or marks as failed
-    res.status(200).send('Webhook received');
+    // ✅ Respond 200 IMMEDIATELY — prevents QuickBooks from retrying
+    res.status(200).send('OK');
 
-    // Check tokens available
+    // Check tokens are available
     if (!global.qbTokens || !global.qbRealmId || !global.zohoTokens) {
         console.warn('⚠️ Webhook received but accounts not connected. Skipping.');
         return;
@@ -97,24 +102,28 @@ async function handleWebhook(req, res) {
         return;
     }
 
-    // Process events asynchronously after responding
     for (const event of events) {
         const entities = event?.dataChangeEvent?.entities || [];
 
         for (const entity of entities) {
+
+            // ✅ FIX — isDuplicate is now actually called here
+            const eventKey = `${entity.name}-${entity.id}-${entity.operation}-${entity.lastUpdated}`;
+            if (isDuplicate(eventKey)) {
+                console.log(`⏭️ Skipping duplicate: ${eventKey}`);
+                continue; // skip this entity, move to next
+            }
+
             console.log(`📥 QB Event: ${entity.operation} ${entity.name} ID: ${entity.id}`);
 
-            // FIX #4 — Handle both Create AND Update operations
+            // Handle Customer Create and Update
             if (entity.name === 'Customer' &&
                 (entity.operation === 'Create' || entity.operation === 'Update')) {
-
                 try {
-                    // FIX #5 — Refresh tokens before using them
                     const accessToken = await getValidQBToken();
                     const zohoToken = await getValidZohoToken();
-                    const realmId = global.qbRealmId;
 
-                    await syncSingleCustomer(accessToken, realmId, zohoToken, entity.id);
+                    await syncSingleCustomer(accessToken, global.qbRealmId, zohoToken, entity.id);
                     console.log(`✅ Auto-synced Customer ID: ${entity.id} (${entity.operation})`);
 
                 } catch (err) {
