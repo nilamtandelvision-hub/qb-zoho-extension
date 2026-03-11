@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { syncSingleCustomer } = require('./sync');
+const { syncSingleCustomer, syncSingleInvoice } = require('./sync');
 const { refreshToken } = require('./qbAuth');
 const { refreshZohoToken } = require('./zohoAuth');
 const { saveTokens } = require('./config/tokens');
