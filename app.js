@@ -4,17 +4,13 @@ const cors = require('cors');
 const { getAuthUrl, getToken, oauthClient } = require('./qbAuth');
 const { getZohoAuthUrl, getZohoToken } = require('./zohoAuth');
 const { syncCustomers, syncInvoices } = require('./sync');
-const { handleWebhook } = require("./webhook");
+const { handleWebhook } = require('./webhook');
 require('dotenv').config();
-
-
-
-
 
 const app = express();
 
 // ─────────────────────────────────────────
-// CORS — Allow all origins for public use
+// CORS
 // ─────────────────────────────────────────
 app.use(cors({
     origin: '*',
@@ -22,14 +18,40 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: false
 }));
-app.use(express.json());
-app.post("/qb/webhook", handleWebhook);
 
+// ─────────────────────────────────────────
+// FIX #1 — Raw body for webhook BEFORE express.json()
+// Without this, req.body is UNDEFINED in webhook handler
+// ─────────────────────────────────────────
+app.use((req, res, next) => {
+    if (req.originalUrl === '/qb/webhook') {
+        let rawBody = '';
+        req.on('data', chunk => rawBody += chunk);
+        req.on('end', () => {
+            req.rawBody = rawBody;
+            try {
+                req.body = JSON.parse(rawBody || '{}');
+            } catch (e) {
+                req.body = {};
+            }
+            next();
+        });
+    } else {
+        express.json()(req, res, next);
+    }
+});
 
-// Store tokens temporarily
+// ─────────────────────────────────────────
+// TOKEN STORE (local + global for webhook access)
+// ─────────────────────────────────────────
 let qbTokens = null;
 let zohoTokens = null;
 let qbRealmId = null;
+
+// ─────────────────────────────────────────
+// WEBHOOK ROUTE
+// ─────────────────────────────────────────
+app.post('/qb/webhook', handleWebhook);
 
 // ─────────────────────────────────────────
 // STATUS ROUTE
@@ -38,6 +60,7 @@ app.get('/status', (req, res) => {
     res.json({
         qbConnected: qbTokens !== null,
         zohoConnected: zohoTokens !== null,
+        webhookActive: qbTokens !== null && zohoTokens !== null,
     });
 });
 
@@ -53,21 +76,19 @@ app.get('/', (req, res) => {
         body { font-family: Arial, sans-serif; max-width: 500px;
                margin: 40px auto; padding: 20px; }
         h1 { color: #0070C0; text-align: center; }
-        .status { padding: 12px; border-radius: 8px; margin: 8px 0;
-                  font-weight: bold; }
+        .status { padding: 12px; border-radius: 8px; margin: 8px 0; font-weight: bold; }
         .connected { background: #d4edda; color: #155724; }
         .disconnected { background: #f8d7da; color: #721c24; }
         button { padding: 12px 20px; margin: 8px 0; width: 100%;
                  background: #0070C0; color: white; border: none;
                  border-radius: 8px; cursor: pointer; font-size: 15px; }
         button:hover { background: #005a9e; }
-        .section { margin: 20px 0; padding: 15px;
-                   border: 1px solid #ddd; border-radius: 10px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 10px; }
         .subtitle { text-align: center; color: #666; margin-top: -10px; }
-        .both-connected { background: #d4edda; color: #155724;
-                          padding: 12px; border-radius: 8px;
-                          text-align: center; font-weight: bold;
-                          margin-top: 10px; }
+        .both-connected { background: #d4edda; color: #155724; padding: 12px;
+                          border-radius: 8px; text-align: center; font-weight: bold; margin-top: 10px; }
+        .auto-sync { background: #cce5ff; color: #004085; padding: 12px;
+                     border-radius: 8px; text-align: center; margin-top: 8px; }
       </style>
     </head>
     <body>
@@ -82,9 +103,11 @@ app.get('/', (req, res) => {
         <div class="status ${zohoTokens ? 'connected' : 'disconnected'}">
           Zoho CRM: ${zohoTokens ? '✅ Connected' : '❌ Not Connected'}
         </div>
-        ${qbTokens && zohoTokens ?
-            '<div class="both-connected">🎉 Both connected! Sync is active.</div>'
-            : ''}
+        ${qbTokens && zohoTokens ? `
+          <div class="both-connected">🎉 Both connected! Sync is active.</div>
+          <div class="auto-sync">⚡ Auto-sync ACTIVE via Webhooks<br/>
+          <small>Customers sync instantly when added/updated in QuickBooks</small></div>
+        ` : ''}
       </div>
 
       <div class="section">
@@ -107,10 +130,16 @@ app.get('/', (req, res) => {
   `);
 });
 
+// ─────────────────────────────────────────
+// DISCONNECT
+// ─────────────────────────────────────────
 app.get('/disconnect', (req, res) => {
     qbTokens = null;
     zohoTokens = null;
     qbRealmId = null;
+    global.qbTokens = null;
+    global.qbRealmId = null;
+    global.zohoTokens = null;
     console.log('🔌 Disconnected all accounts');
     res.redirect('/');
 });
@@ -155,7 +184,6 @@ app.get('/zoho/callback', async (req, res) => {
         if (!code) throw new Error('No auth code received from Zoho');
         zohoTokens = await getZohoToken(code);
         global.zohoTokens = zohoTokens;
-
         console.log('✅ Zoho CRM Connected!');
         res.redirect('/');
     } catch (err) {
@@ -165,7 +193,7 @@ app.get('/zoho/callback', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// SYNC ROUTES
+// MANUAL SYNC ROUTES (kept as backup)
 // ─────────────────────────────────────────
 app.get('/sync/customers', async (req, res) => {
     if (!qbTokens || !zohoTokens) {
@@ -214,30 +242,18 @@ app.get('/sync/invoices', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// AUTO SYNC EVERY 2 HOURS
+// AUTO SYNC EVERY 2 HOURS (backup safety net)
 // ─────────────────────────────────────────
 cron.schedule('0 */2 * * *', async () => {
     if (qbTokens && zohoTokens) {
         console.log('⏰ Auto sync started...');
-
         try {
-            await syncCustomers(
-                qbTokens.access_token,
-                qbRealmId,
-                zohoTokens.access_token
-            );
-
-            await syncInvoices(
-                qbTokens.access_token,
-                qbRealmId,
-                zohoTokens.access_token
-            );
-
+            await syncCustomers(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
+            await syncInvoices(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
             console.log('⏰ Auto sync complete!');
         } catch (err) {
             console.error('❌ Auto Sync Error:', err);
         }
-
     } else {
         console.log('⏰ Auto sync skipped - accounts not connected.');
     }
@@ -249,4 +265,5 @@ cron.schedule('0 */2 * * *', async () => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 Server running on port ${PORT}`);
+    console.log(`📡 Webhook ready at: POST /qb/webhook`);
 });
