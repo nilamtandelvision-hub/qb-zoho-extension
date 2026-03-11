@@ -130,6 +130,21 @@ async function handleWebhook(req, res) {
                     console.error(`❌ Failed to sync Customer ID ${entity.id}:`, err.message);
                 }
             }
+
+            // Handle Invoice Create and Update
+            if (entity.name === 'Invoice' &&
+                (entity.operation === 'Create' || entity.operation === 'Update')) {
+                try {
+                    const accessToken = await getValidQBToken();
+                    const zohoToken = await getValidZohoToken();
+
+                    await syncSingleInvoice(accessToken, global.qbRealmId, zohoToken, entity.id);
+                    console.log(`✅ Auto-synced Invoice ID: ${entity.id} (${entity.operation})`);
+
+                } catch (err) {
+                    console.error(`❌ Failed to sync Invoice ID ${entity.id}:`, err.message);
+                }
+            }
         }
     }
 }

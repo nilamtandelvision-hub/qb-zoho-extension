@@ -87,4 +87,24 @@ async function syncSingleCustomer(accessToken, realmId, zohoToken, customerId) {
     }
 
 }
-module.exports = { syncCustomers, syncInvoices, syncSingleCustomer };
+
+
+async function syncSingleInvoice(accessToken, realmId, zohoToken, invoiceId) {
+    console.log(`\n⚡ Webhook Sync for Invoice: ${invoiceId}`);
+    const qbClient = getQBClient(accessToken, realmId);
+    try {
+        const invoice = await new Promise((resolve, reject) => {
+            qbClient.getInvoice(invoiceId, (err, data) => {
+                if (err) return reject(err);
+                resolve(data);
+            });
+        });
+        const result = await createZohoDeal(zohoToken, invoice);
+        console.log(`✅ Invoice synced via webhook`);
+        return result;
+    } catch (err) {
+        console.error('❌ Invoice webhook sync failed:', err.message);
+    }
+}
+
+module.exports = { syncCustomers, syncInvoices, syncSingleCustomer, syncSingleInvoice };
