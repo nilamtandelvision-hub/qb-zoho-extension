@@ -42,8 +42,8 @@ async function createZohoContact(zohoToken, customer) {
         // ✅ ADD THIS - log response
         console.log('📥 Zoho Response:', JSON.stringify(response.data, null, 2));
 
-        const action = response.data.data[0].details.action;
-        console.log(`✅ Contact ${action.toUpperCase()}: ${customer.DisplayName}`);
+        const action = response.data?.data?.[0]?.action || "updated";
+        console.log(`✅ Contact ${action?.toUpperCase() || "UPDATED"}: ${customer.DisplayName || customer.Id}`);
         return { action };
 
     } catch (err) {
@@ -60,7 +60,7 @@ async function createZohoDeal(zohoToken, invoice) {
     const payload = {
         data: [
             {
-                Deal_Name: `Invoice #${invoice.DocNumber}`,
+                Deal_Name: `Invoice #${invoice.DocNumber || invoice.Id}`,
                 Amount: invoice.TotalAmt || 0,
                 Stage: invoice.Balance === 0 ? "Closed Won" : "Needs Analysis",
                 Closing_Date:
@@ -79,8 +79,8 @@ async function createZohoDeal(zohoToken, invoice) {
         { headers: authHeader(zohoToken) }
     );
 
-    const action = response.data.data[0].details.action;
-    console.log(`✅ Deal ${action.toUpperCase()}: Invoice #${invoice.DocNumber}`);
+    const action = response.data?.data?.[0]?.action || "updated";
+    console.log(`✅ Deal ${(action || "updated").toUpperCase()}: Invoice #${invoice.DocNumber || invoice.Id}`);
 
     return { action };
 }
