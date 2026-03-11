@@ -4,7 +4,12 @@ const cors = require('cors');
 const { getAuthUrl, getToken, oauthClient } = require('./qbAuth');
 const { getZohoAuthUrl, getZohoToken } = require('./zohoAuth');
 const { syncCustomers, syncInvoices } = require('./sync');
+const { handleWebhook } = require("./webhook");
 require('dotenv').config();
+
+
+
+
 
 const app = express();
 
@@ -18,6 +23,8 @@ app.use(cors({
     credentials: false
 }));
 app.use(express.json());
+app.post("/qb/webhook", handleWebhook);
+
 
 // Store tokens temporarily
 let qbTokens = null;
@@ -123,6 +130,8 @@ app.get('/qb/callback', async (req, res) => {
         const token = await getToken(fullUrl);
         qbTokens = token;
         qbRealmId = oauthClient.getToken().realmId;
+        global.qbTokens = qbTokens;
+        global.qbRealmId = qbRealmId;
         console.log('✅ QuickBooks Connected! Realm ID:', qbRealmId);
         res.redirect('/');
     } catch (err) {
@@ -145,6 +154,8 @@ app.get('/zoho/callback', async (req, res) => {
         const code = req.query.code;
         if (!code) throw new Error('No auth code received from Zoho');
         zohoTokens = await getZohoToken(code);
+        global.zohoTokens = zohoTokens;
+
         console.log('✅ Zoho CRM Connected!');
         res.redirect('/');
     } catch (err) {
@@ -208,9 +219,25 @@ app.get('/sync/invoices', async (req, res) => {
 cron.schedule('0 */2 * * *', async () => {
     if (qbTokens && zohoTokens) {
         console.log('⏰ Auto sync started...');
-        await syncCustomers(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
-        await syncInvoices(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
-        console.log('⏰ Auto sync complete!');
+
+        try {
+            await syncCustomers(
+                qbTokens.access_token,
+                qbRealmId,
+                zohoTokens.access_token
+            );
+
+            await syncInvoices(
+                qbTokens.access_token,
+                qbRealmId,
+                zohoTokens.access_token
+            );
+
+            console.log('⏰ Auto sync complete!');
+        } catch (err) {
+            console.error('❌ Auto Sync Error:', err);
+        }
+
     } else {
         console.log('⏰ Auto sync skipped - accounts not connected.');
     }

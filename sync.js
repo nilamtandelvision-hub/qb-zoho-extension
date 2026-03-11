@@ -1,4 +1,4 @@
-const { getQBClient, getCustomers, getInvoices } = require('./quickbooksService');
+const { getQBClient, getCustomers, getInvoices, getCustomerById } = require('./quickbooksService');
 const { createZohoContact, createZohoDeal } = require('./zohoService');
 
 // ─────────────────────────────────────────
@@ -61,4 +61,30 @@ async function syncInvoices(accessToken, realmId, zohoToken) {
     return { created, updated, failed };
 }
 
-module.exports = { syncCustomers, syncInvoices };
+// ─────────────────────────────────────────
+// SYNC ONE CUSTOMER (Webhook)
+// ─────────────────────────────────────────
+async function syncSingleCustomer(accessToken, realmId, zohoToken, customerId) {
+
+    console.log(`\n⚡ Webhook Sync for Customer: ${customerId}`);
+
+    const qbClient = getQBClient(accessToken, realmId);
+
+    try {
+
+        const customer = await getCustomerById(qbClient, customerId);
+
+        const result = await createZohoContact(zohoToken, customer);
+
+        console.log(`✅ Customer synced via webhook`);
+
+        return result;
+
+    } catch (err) {
+
+        console.error("❌ Webhook sync failed:", err);
+
+    }
+
+}
+module.exports = { syncCustomers, syncInvoices, syncSingleCustomer };

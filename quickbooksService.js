@@ -62,4 +62,23 @@ async function getProducts(qbClient) {
     });
 }
 
-module.exports = { getQBClient, getCustomers, getInvoices, getProducts };
+// Fetch single customer by ID (for webhook)
+async function getCustomerById(qbClient, customerId) {
+    return new Promise((resolve, reject) => {
+        qbClient.getCustomer(customerId, (err, data) => {
+            if (err) {
+                console.error('Error fetching QB customer:', err);
+                return reject(err);
+            }
+            resolve(data);
+        });
+    });
+}
+
+module.exports = {
+    getQBClient,
+    getCustomers,
+    getInvoices,
+    getProducts,
+    getCustomerById
+};
