@@ -1,110 +1,35 @@
-const { getQBClient, getCustomers, getInvoices, getCustomerById } = require('./quickbooksService');
+const { getQBClient, getCustomerById } = require('./quickbooksService');
 const { createZohoContact, createZohoDeal } = require('./zohoService');
 
 // ─────────────────────────────────────────
-// SYNC QB Customers → Zoho Contacts
-// ─────────────────────────────────────────
-async function syncCustomers(accessToken, realmId, zohoToken) {
-    console.log('\n🔄 Starting Customer Sync...');
-    const qbClient = getQBClient(accessToken, realmId);
-    const customers = await getCustomers(qbClient);
-
-    let created = 0;
-    let updated = 0;
-    let failed = 0;
-
-    for (const customer of customers) {
-        try {
-            const result = await createZohoContact(zohoToken, customer);
-            if (result.action === 'created') created++;
-            if (result.action === 'updated') updated++;
-        } catch (err) {
-            failed++;
-        }
-    }
-
-    console.log(`\n📊 Customer Sync Done!`);
-    console.log(`   ✅ Created: ${created}`);
-    console.log(`   🔄 Updated: ${updated}`);
-    console.log(`   ❌ Failed:  ${failed}`);
-
-    return { created, updated, failed };
-}
-
-// ─────────────────────────────────────────
-// SYNC QB Invoices → Zoho Deals
-// ─────────────────────────────────────────
-async function syncInvoices(accessToken, realmId, zohoToken) {
-    console.log('\n🔄 Starting Invoice Sync...');
-    const qbClient = getQBClient(accessToken, realmId);
-    const invoices = await getInvoices(qbClient);
-
-    let created = 0;
-    let updated = 0;
-    let failed = 0;
-
-    for (const invoice of invoices) {
-        try {
-            const result = await createZohoDeal(zohoToken, invoice);
-            if (result.action === 'created') created++;
-            if (result.action === 'updated') updated++;
-        } catch (err) {
-            failed++;
-        }
-    }
-
-    console.log(`\n📊 Invoice Sync Done!`);
-    console.log(`   ✅ Created: ${created}`);
-    console.log(`   🔄 Updated: ${updated}`);
-    console.log(`   ❌ Failed:  ${failed}`);
-
-    return { created, updated, failed };
-}
-
-// ─────────────────────────────────────────
-// SYNC ONE CUSTOMER (Webhook)
+// SYNC SINGLE Customer — Webhook only
 // ─────────────────────────────────────────
 async function syncSingleCustomer(accessToken, realmId, zohoToken, customerId) {
-
     console.log(`\n⚡ Webhook Sync for Customer: ${customerId}`);
-
     const qbClient = getQBClient(accessToken, realmId);
-
-    try {
-
-        const customer = await getCustomerById(qbClient, customerId);
-
-        const result = await createZohoContact(zohoToken, customer);
-
-        console.log(`✅ Customer synced via webhook`);
-
-        return result;
-
-    } catch (err) {
-
-        console.error("❌ Webhook sync failed:", err);
-
-    }
-
+    // No try/catch here — let error bubble up to webhook.js retry logic
+    const customer = await getCustomerById(qbClient, customerId);
+    const result = await createZohoContact(zohoToken, customer);
+    console.log(`✅ Customer synced via webhook`);
+    return result;
 }
 
-
+// ─────────────────────────────────────────
+// SYNC SINGLE Invoice — Webhook only
+// ─────────────────────────────────────────
 async function syncSingleInvoice(accessToken, realmId, zohoToken, invoiceId) {
     console.log(`\n⚡ Webhook Sync for Invoice: ${invoiceId}`);
     const qbClient = getQBClient(accessToken, realmId);
-    try {
-        const invoice = await new Promise((resolve, reject) => {
-            qbClient.getInvoice(invoiceId, (err, data) => {
-                if (err) return reject(err);
-                resolve(data);
-            });
+    // No try/catch here — let error bubble up to webhook.js retry logic
+    const invoice = await new Promise((resolve, reject) => {
+        qbClient.getInvoice(invoiceId, (err, data) => {
+            if (err) return reject(err);
+            resolve(data);
         });
-        const result = await createZohoDeal(zohoToken, invoice);
-        console.log(`✅ Invoice synced via webhook`);
-        return result;
-    } catch (err) {
-        console.error('❌ Invoice webhook sync failed:', err.message);
-    }
+    });
+    const result = await createZohoDeal(zohoToken, invoice);
+    console.log(`✅ Invoice synced via webhook`);
+    return result;
 }
 
-module.exports = { syncCustomers, syncInvoices, syncSingleCustomer, syncSingleInvoice };
+module.exports = { syncSingleCustomer, syncSingleInvoice };

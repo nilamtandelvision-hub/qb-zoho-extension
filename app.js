@@ -1,10 +1,8 @@
 const express = require('express');
-const cron = require('node-cron');
 const cors = require('cors');
 const fs = require('fs');
 const { getAuthUrl, getToken, oauthClient } = require('./qbAuth');
 const { getZohoAuthUrl, getZohoToken } = require('./zohoAuth');
-const { syncCustomers, syncInvoices } = require('./sync');
 const { handleWebhook } = require('./webhook');
 const { saveTokens, loadTokens } = require('./config/tokens');
 require('dotenv').config();
@@ -30,11 +28,8 @@ app.use((req, res, next) => {
         req.on('data', chunk => rawBody += chunk);
         req.on('end', () => {
             req.rawBody = rawBody;
-            try {
-                req.body = JSON.parse(rawBody || '{}');
-            } catch (e) {
-                req.body = {};
-            }
+            try { req.body = JSON.parse(rawBody || '{}'); }
+            catch (e) { req.body = {}; }
             next();
         });
     } else {
@@ -51,18 +46,15 @@ let qbRealmId = null;
 
 // ─────────────────────────────────────────
 // LOAD TOKENS ON STARTUP
-// Tries tokens.json first, then Render env vars
 // ─────────────────────────────────────────
 const savedTokens = loadTokens();
 if (savedTokens) {
     qbTokens = savedTokens.qbTokens;
     qbRealmId = savedTokens.qbRealmId;
     zohoTokens = savedTokens.zohoTokens;
-
     global.qbTokens = qbTokens;
     global.qbRealmId = qbRealmId;
     global.zohoTokens = zohoTokens;
-
     console.log("✅ Tokens loaded — webhook is ready");
 } else {
     console.warn("⚠️ No tokens — visit your server URL to connect accounts");
@@ -93,29 +85,25 @@ app.get('/', (req, res) => {
     <head>
       <title>QB ↔ Zoho Connector</title>
       <style>
-        body { font-family: Arial, sans-serif; max-width: 500px;
-               margin: 40px auto; padding: 20px; }
+        body { font-family: Arial, sans-serif; max-width: 500px; margin: 40px auto; padding: 20px; }
         h1 { color: #0070C0; text-align: center; }
         .status { padding: 12px; border-radius: 8px; margin: 8px 0; font-weight: bold; }
         .connected { background: #d4edda; color: #155724; }
         .disconnected { background: #f8d7da; color: #721c24; }
-        button { padding: 12px 20px; margin: 8px 0; width: 100%;
-                 background: #0070C0; color: white; border: none;
-                 border-radius: 8px; cursor: pointer; font-size: 15px; }
+        button { padding: 12px 20px; margin: 8px 0; width: 100%; background: #0070C0;
+                 color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; }
         button:hover { background: #005a9e; }
         .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 10px; }
         .subtitle { text-align: center; color: #666; margin-top: -10px; }
-        .both-connected { background: #d4edda; color: #155724; padding: 12px;
-                          border-radius: 8px; text-align: center; font-weight: bold; margin-top: 10px; }
-        .auto-sync { background: #cce5ff; color: #004085; padding: 12px;
-                     border-radius: 8px; text-align: center; margin-top: 8px; font-size: 14px; }
-        .warning { background: #fff3cd; color: #856404; padding: 12px;
-                   border-radius: 8px; text-align: center; margin-top: 8px; font-size: 13px; }
+        .badge { padding: 12px; border-radius: 8px; text-align: center; margin-top: 10px; font-size: 14px; }
+        .active { background: #d4edda; color: #155724; font-weight: bold; }
+        .info { background: #cce5ff; color: #004085; }
+        .warn { background: #fff3cd; color: #856404; font-size: 13px; }
       </style>
     </head>
     <body>
       <h1>⚡ QB ↔ Zoho CRM</h1>
-      <p class="subtitle">QuickBooks Sync for Zoho CRM</p>
+      <p class="subtitle">Auto-Sync via Webhooks</p>
 
       <div class="section">
         <h3>🔌 Connection Status</h3>
@@ -126,11 +114,8 @@ app.get('/', (req, res) => {
           Zoho CRM: ${zohoTokens ? '✅ Connected' : '❌ Not Connected'}
         </div>
         ${qbTokens && zohoTokens ? `
-          <div class="both-connected">🎉 Both connected! Sync is active.</div>
-          <div class="auto-sync">⚡ Auto-sync ACTIVE via Webhooks<br/>
-          Customers sync instantly when added/updated in QuickBooks</div>
-          <div class="warning">⚠️ After connecting, copy tokens to Render env vars<br/>
-          so they survive server restarts. See /tokens route.</div>
+          <div class="badge active">⚡ Auto-sync ACTIVE — customers & invoices sync instantly</div>
+          <div class="badge warn">⚠️ Copy tokens to Render env vars → <a href="/tokens">View Tokens</a></div>
         ` : ''}
       </div>
 
@@ -138,27 +123,24 @@ app.get('/', (req, res) => {
         <h3>🔑 Connect Accounts</h3>
         ${!qbTokens ?
             '<a href="/qb/auth"><button>🔗 Connect QuickBooks</button></a>' :
-            '<button style="background:#28a745;">✅ QuickBooks Connected</button>'
+            '<button style="background:#28a745;" disabled>✅ QuickBooks Connected</button>'
         }
         ${!zohoTokens ?
             '<a href="/zoho/auth"><button style="background:#e44d26;">🔗 Connect Zoho CRM</button></a>' :
-            '<button style="background:#28a745;">✅ Zoho CRM Connected</button>'
+            '<button style="background:#28a745;" disabled>✅ Zoho CRM Connected</button>'
         }
         ${qbTokens && zohoTokens ?
-            '<a href="/tokens"><button style="background:#6f42c1;">📋 View Tokens for Render</button></a>'
-            : ''}
+            '<a href="/tokens"><button style="background:#6f42c1;">📋 View Tokens for Render</button></a>' : ''}
         ${qbTokens || zohoTokens ?
-            '<a href="/disconnect"><button style="background:#dc3545;">🔌 Disconnect All</button></a>'
-            : ''}
+            '<a href="/disconnect"><button style="background:#dc3545;">🔌 Disconnect All</button></a>' : ''}
       </div>
-
     </body>
     </html>
   `);
 });
 
 // ─────────────────────────────────────────
-// TOKENS ROUTE — shows tokens to copy into Render
+// TOKENS PAGE
 // ─────────────────────────────────────────
 app.get('/tokens', (req, res) => {
     if (!qbTokens || !zohoTokens) {
@@ -177,9 +159,9 @@ app.get('/tokens', (req, res) => {
             <tr><td>ZOHO_REFRESH_TOKEN</td><td>${zohoTokens.refresh_token}</td></tr>
         </table>
         <br/>
-        <p>1. Copy each value above into Render → Environment Variables</p>
-        <p>2. Click Save on Render — it will restart automatically</p>
-        <p>3. Tokens will now survive every restart ✅</p>
+        <p>1. Copy each value into Render → Environment Variables</p>
+        <p>2. Click Save — Render restarts automatically</p>
+        <p>3. Tokens survive every restart ✅</p>
         <a href="/">← Go Back</a>
         </body></html>
     `);
@@ -195,23 +177,19 @@ app.get('/disconnect', (req, res) => {
     global.qbTokens = null;
     global.qbRealmId = null;
     global.zohoTokens = null;
-
     if (fs.existsSync('./config/tokens.json')) {
         fs.unlinkSync('./config/tokens.json');
         console.log("🗑️ tokens.json removed");
     }
-
     console.log('🔌 Disconnected all accounts');
     res.redirect('/');
 });
 
 // ─────────────────────────────────────────
-// QUICKBOOKS AUTH ROUTES
+// QUICKBOOKS AUTH
 // ─────────────────────────────────────────
 app.get('/qb/auth', (req, res) => {
-    const authUrl = getAuthUrl();
-    console.log('Redirecting to QB Auth:', authUrl);
-    res.redirect(authUrl);
+    res.redirect(getAuthUrl());
 });
 
 app.get('/qb/callback', async (req, res) => {
@@ -222,16 +200,10 @@ app.get('/qb/callback', async (req, res) => {
         qbRealmId = req.query.realmId;
         global.qbTokens = qbTokens;
         global.qbRealmId = qbRealmId;
-
         saveTokens({ qbTokens, qbRealmId, zohoTokens });
-
-        // Print to logs so you can copy to Render env vars
-        console.log('\n🔑 ===== QB TOKENS (copy to Render env vars) =====');
-        console.log('QB_ACCESS_TOKEN =', qbTokens.access_token);
-        console.log('QB_REFRESH_TOKEN =', qbTokens.refresh_token);
-        console.log('QB_REALM_ID =', qbRealmId);
-        console.log('=================================================\n');
-
+        console.log('\n🔑 QB_ACCESS_TOKEN =', qbTokens.access_token);
+        console.log('🔑 QB_REFRESH_TOKEN =', qbTokens.refresh_token);
+        console.log('🔑 QB_REALM_ID =', qbRealmId);
         console.log('✅ QuickBooks Connected! Realm ID:', qbRealmId);
         res.redirect('/');
     } catch (err) {
@@ -241,12 +213,10 @@ app.get('/qb/callback', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// ZOHO AUTH ROUTES
+// ZOHO AUTH
 // ─────────────────────────────────────────
 app.get('/zoho/auth', (req, res) => {
-    const authUrl = getZohoAuthUrl();
-    console.log('Redirecting to Zoho Auth:', authUrl);
-    res.redirect(authUrl);
+    res.redirect(getZohoAuthUrl());
 });
 
 app.get('/zoho/callback', async (req, res) => {
@@ -255,15 +225,9 @@ app.get('/zoho/callback', async (req, res) => {
         if (!code) throw new Error('No auth code received from Zoho');
         zohoTokens = await getZohoToken(code);
         global.zohoTokens = zohoTokens;
-
         saveTokens({ qbTokens, qbRealmId, zohoTokens });
-
-        // Print to logs so you can copy to Render env vars
-        console.log('\n🔑 ===== ZOHO TOKENS (copy to Render env vars) =====');
-        console.log('ZOHO_ACCESS_TOKEN =', zohoTokens.access_token);
-        console.log('ZOHO_REFRESH_TOKEN =', zohoTokens.refresh_token);
-        console.log('====================================================\n');
-
+        console.log('\n🔑 ZOHO_ACCESS_TOKEN =', zohoTokens.access_token);
+        console.log('🔑 ZOHO_REFRESH_TOKEN =', zohoTokens.refresh_token);
         console.log('✅ Zoho CRM Connected!');
         res.redirect('/');
     } catch (err) {
@@ -273,59 +237,14 @@ app.get('/zoho/callback', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// MANUAL SYNC ROUTES (kept as backup)
+// KEEP RENDER AWAKE — ping every 10 minutes
 // ─────────────────────────────────────────
-app.get('/sync/customers', async (req, res) => {
-    if (!qbTokens || !zohoTokens) {
-        return res.send('❌ Please connect both accounts first! <a href="/">Go Back</a>');
-    }
-    try {
-        const result = await syncCustomers(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
-        res.send(`✅ Customer Sync Complete!<br/>Created: ${result.created}<br/>Updated: ${result.updated}<br/>Failed: ${result.failed}<br/><a href="/">Go Back</a>`);
-    } catch (err) {
-        console.error('Sync Error:', err);
-        res.status(500).send('Sync failed.');
-    }
-});
-
-app.get('/sync/invoices', async (req, res) => {
-    if (!qbTokens || !zohoTokens) {
-        return res.send('❌ Please connect both accounts first! <a href="/">Go Back</a>');
-    }
-    try {
-        const result = await syncInvoices(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
-        res.send(`✅ Invoice Sync Complete!<br/>Created: ${result.created}<br/>Updated: ${result.updated}<br/>Failed: ${result.failed}<br/><a href="/">Go Back</a>`);
-    } catch (err) {
-        console.error('Sync Error:', err);
-        res.status(500).send('Sync failed.');
-    }
-});
-
-// ─────────────────────────────────────────
-// AUTO SYNC EVERY 2 HOURS (backup safety net)
-// ─────────────────────────────────────────
-cron.schedule('0 */2 * * *', async () => {
-    if (qbTokens && zohoTokens) {
-        console.log('⏰ Auto sync started...');
-        try {
-            await syncCustomers(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
-            await syncInvoices(qbTokens.access_token, qbRealmId, zohoTokens.access_token);
-            console.log('⏰ Auto sync complete!');
-        } catch (err) {
-            console.error('❌ Auto Sync Error:', err);
-        }
-    } else {
-        console.log('⏰ Auto sync skipped - accounts not connected.');
-    }
-});
-
-
 setInterval(async () => {
     try {
         const response = await fetch('https://qb-zoho-extension.onrender.com/status');
-        console.log('Keep-alive ping:', response.status);
+        console.log(' Keep-alive ping:', response.status);
     } catch (err) {
-        console.log('Keep-alive ping failed:', err.message);
+        console.log('⚠️ Keep-alive ping failed:', err.message);
     }
 }, 10 * 60 * 1000);
 
