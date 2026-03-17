@@ -319,6 +319,16 @@ cron.schedule('0 */2 * * *', async () => {
     }
 });
 
+
+setInterval(async () => {
+    try {
+        const response = await fetch('https://qb-zoho-extension.onrender.com/status');
+        console.log('Keep-alive ping:', response.status);
+    } catch (err) {
+        console.log('Keep-alive ping failed:', err.message);
+    }
+}, 10 * 60 * 1000);
+
 // ─────────────────────────────────────────
 // START SERVER
 // ─────────────────────────────────────────
