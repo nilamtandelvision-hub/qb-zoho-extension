@@ -27,13 +27,19 @@ async function getToken(fullUrl) {
 }
 
 // Refresh access token when expired
-async function refreshToken(refreshToken) {
+async function refreshToken(currentRefreshToken) {
     try {
-        oauthClient.setToken({ refresh_token: refreshToken });
+        oauthClient.setToken({ refresh_token: currentRefreshToken });
         const response = await oauthClient.refresh();
-        return response.getJson();
+        const tokens = response.getJson();
+        // QB always returns a new refresh_token — must save it
+        return {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token || currentRefreshToken,
+            expires_in: tokens.expires_in,
+        };
     } catch (err) {
-        console.error('QB Refresh Error:', err);
+        console.error('QB Refresh Error:', err.response?.data || err.message);
         throw err;
     }
 }

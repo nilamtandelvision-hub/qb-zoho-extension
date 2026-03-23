@@ -32,35 +32,51 @@ function verifySignature(rawBody, signature) {
 }
 
 // ─────────────────────────────────────────
-// Refresh QB token ONLY when needed
+// Refresh QB token and save to global + file + Render
 // ─────────────────────────────────────────
 async function refreshQBToken() {
     console.log('🔄 Refreshing QB access token...');
     const refreshed = await refreshToken(global.qbTokens?.refresh_token);
-    global.qbTokens = refreshed;
-    saveTokens({
+
+    // ✅ Spread to preserve any extra fields, update only token values
+    global.qbTokens = {
+        ...global.qbTokens,
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token, // QB rotates this — must update
+        expires_in: refreshed.expires_in,
+    };
+
+    // ✅ await saveTokens — it's async (calls Render API)
+    await saveTokens({
         qbTokens: global.qbTokens,
         qbRealmId: global.qbRealmId,
         zohoTokens: global.zohoTokens
     });
-    console.log('✅ QB token refreshed successfully');
-    return refreshed.access_token;
+
+    console.log('✅ QB token refreshed and saved');
 }
 
 // ─────────────────────────────────────────
-// Refresh Zoho token ONLY when needed
+// Refresh Zoho token and save to global + file + Render
 // ─────────────────────────────────────────
 async function refreshZohoTokenIfNeeded() {
     console.log('🔄 Refreshing Zoho access token...');
     const refreshed = await refreshZohoToken(global.zohoTokens?.refresh_token);
-    global.zohoTokens = { ...global.zohoTokens, ...refreshed };
-    saveTokens({
+
+    // ✅ Preserve refresh_token (Zoho doesn't rotate it, but keep it safe)
+    global.zohoTokens = {
+        ...global.zohoTokens,
+        access_token: refreshed.access_token,
+    };
+
+    // ✅ await saveTokens
+    await saveTokens({
         qbTokens: global.qbTokens,
         qbRealmId: global.qbRealmId,
         zohoTokens: global.zohoTokens
     });
-    console.log('✅ Zoho token refreshed successfully');
-    return refreshed.access_token;
+
+    console.log('✅ Zoho token refreshed and saved');
 }
 
 // ─────────────────────────────────────────
@@ -79,25 +95,31 @@ function isTokenExpiredError(err) {
 // Sync Customer with auto-retry on 401
 // ─────────────────────────────────────────
 async function syncCustomerWithRetry(entity) {
-    const qbToken = global.qbTokens?.access_token;
-    const zohoToken = global.zohoTokens?.access_token;
-    const realmId = global.qbRealmId;
-
     try {
-        // ✅ Try with existing token first — no unnecessary refresh
-        await syncSingleCustomer(qbToken, realmId, zohoToken, entity.id);
-        console.log(`✅ Auto-synced Customer ID: ${entity.id} (${entity.operation})`);
+        // ✅ Always read fresh from global — never use captured variables
+        await syncSingleCustomer(
+            global.qbTokens?.access_token,
+            global.qbRealmId,
+            global.zohoTokens?.access_token,
+            entity.id
+        );
+        console.log(`✅ Customer ${entity.id} synced (${entity.operation})`);
 
     } catch (err) {
         if (isTokenExpiredError(err)) {
-            // Token expired — refresh ONCE and retry
             console.log(`⚠️ Token expired for Customer ${entity.id} — refreshing...`);
             try {
-                const newQBToken = await refreshQBToken();
-                await syncSingleCustomer(newQBToken, realmId, zohoToken, entity.id);
-                console.log(`✅ Auto-synced Customer ID: ${entity.id} (after token refresh)`);
+                await refreshQBToken(); // ✅ updates global.qbTokens internally
+                // ✅ After refresh, read fresh from global again
+                await syncSingleCustomer(
+                    global.qbTokens?.access_token,
+                    global.qbRealmId,
+                    global.zohoTokens?.access_token,
+                    entity.id
+                );
+                console.log(`✅ Customer ${entity.id} synced after token refresh`);
             } catch (retryErr) {
-                console.error(`❌ Customer sync failed after token refresh:`, retryErr.message);
+                console.error(`❌ Customer sync failed after refresh:`, retryErr.message);
             }
         } else {
             console.error(`❌ Customer sync failed:`, err.message);
@@ -109,25 +131,31 @@ async function syncCustomerWithRetry(entity) {
 // Sync Invoice with auto-retry on 401
 // ─────────────────────────────────────────
 async function syncInvoiceWithRetry(entity) {
-    const qbToken = global.qbTokens?.access_token;
-    const zohoToken = global.zohoTokens?.access_token;
-    const realmId = global.qbRealmId;
-
     try {
-        // ✅ Try with existing token first — no unnecessary refresh
-        await syncSingleInvoice(qbToken, realmId, zohoToken, entity.id);
-        console.log(`✅ Auto-synced Invoice ID: ${entity.id} (${entity.operation})`);
+        // ✅ Always read fresh from global — never use captured variables
+        await syncSingleInvoice(
+            global.qbTokens?.access_token,
+            global.qbRealmId,
+            global.zohoTokens?.access_token,
+            entity.id
+        );
+        console.log(`✅ Invoice ${entity.id} synced (${entity.operation})`);
 
     } catch (err) {
         if (isTokenExpiredError(err)) {
-            // Token expired — refresh ONCE and retry
             console.log(`⚠️ Token expired for Invoice ${entity.id} — refreshing...`);
             try {
-                const newQBToken = await refreshQBToken();
-                await syncSingleInvoice(newQBToken, realmId, zohoToken, entity.id);
-                console.log(`✅ Auto-synced Invoice ID: ${entity.id} (after token refresh)`);
+                await refreshQBToken(); // ✅ updates global.qbTokens internally
+                // ✅ After refresh, read fresh from global again
+                await syncSingleInvoice(
+                    global.qbTokens?.access_token,
+                    global.qbRealmId,
+                    global.zohoTokens?.access_token,
+                    entity.id
+                );
+                console.log(`✅ Invoice ${entity.id} synced after token refresh`);
             } catch (retryErr) {
-                console.error(`❌ Invoice sync failed after token refresh:`, retryErr.message);
+                console.error(`❌ Invoice sync failed after refresh:`, retryErr.message);
             }
         } else {
             console.error(`❌ Invoice sync failed:`, err.message);
@@ -151,7 +179,7 @@ async function handleWebhook(req, res) {
         return res.status(401).send('Unauthorized');
     }
 
-    // ✅ Respond 200 IMMEDIATELY
+    // ✅ Respond 200 IMMEDIATELY — QB requires fast response
     res.status(200).send('OK');
 
     if (!global.qbTokens || !global.qbRealmId || !global.zohoTokens) {

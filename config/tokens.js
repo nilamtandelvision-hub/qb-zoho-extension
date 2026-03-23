@@ -1,26 +1,45 @@
+// config/tokens.js
 const fs = require("fs");
 const path = require("path");
+const axios = require("axios");
 
 const TOKEN_FILE = path.join(__dirname, "tokens.json");
 
-// ─────────────────────────────────────────
-// SAVE tokens to file (works locally)
-// ─────────────────────────────────────────
-function saveTokens(data) {
+async function saveTokens(data) {
+    // 1. Always save to file (works locally)
     try {
         fs.writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2));
     } catch (err) {
-        console.warn("⚠️ Could not save tokens to file:", err.message);
+        console.warn("⚠️ Could not save tokens.json:", err.message);
+    }
+
+    // 2. On Render — update env vars via API so they survive restarts
+    if (process.env.RENDER_API_KEY && process.env.RENDER_SERVICE_ID) {
+        try {
+            await axios.put(
+                `https://api.render.com/v1/services/${process.env.RENDER_SERVICE_ID}/env-vars`,
+                [
+                    { key: 'QB_ACCESS_TOKEN', value: data.qbTokens?.access_token || '' },
+                    { key: 'QB_REFRESH_TOKEN', value: data.qbTokens?.refresh_token || '' },
+                    { key: 'QB_REALM_ID', value: data.qbRealmId || '' },
+                    { key: 'ZOHO_ACCESS_TOKEN', value: data.zohoTokens?.access_token || '' },
+                    { key: 'ZOHO_REFRESH_TOKEN', value: data.zohoTokens?.refresh_token || '' },
+                ],
+                {
+                    headers: {
+                        'Authorization': `Bearer ${process.env.RENDER_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            console.log("✅ Tokens saved to Render env vars");
+        } catch (err) {
+            console.warn("⚠️ Could not update Render env vars:", err.message);
+        }
     }
 }
 
-// ─────────────────────────────────────────
-// LOAD tokens — tries file first, then env vars
-// Render resets filesystem on restart, so env vars
-// are the only reliable storage on Render
-// ─────────────────────────────────────────
 function loadTokens() {
-    // 1. Try file first (works locally)
     if (fs.existsSync(TOKEN_FILE)) {
         try {
             const data = JSON.parse(fs.readFileSync(TOKEN_FILE));
@@ -31,7 +50,6 @@ function loadTokens() {
         }
     }
 
-    // 2. Fall back to environment variables (works on Render after restart)
     if (process.env.QB_ACCESS_TOKEN && process.env.QB_REALM_ID && process.env.ZOHO_ACCESS_TOKEN) {
         console.log("✅ Tokens loaded from environment variables");
         return {
@@ -47,7 +65,7 @@ function loadTokens() {
         };
     }
 
-    console.warn("⚠️ No saved tokens found — please connect accounts");
+    console.warn("⚠️ No saved tokens found");
     return null;
 }
 
