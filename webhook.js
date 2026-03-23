@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { syncSingleCustomer, syncSingleInvoice } = require('./sync');
+const { deleteZohoContact, deleteZohoDeal } = require('./zohoService');
 const { refreshToken } = require('./qbAuth');
 const { refreshZohoToken } = require('./zohoAuth');
 const { saveTokens } = require('./config/tokens');
@@ -37,22 +38,17 @@ function verifySignature(rawBody, signature) {
 async function refreshQBToken() {
     console.log('🔄 Refreshing QB access token...');
     const refreshed = await refreshToken(global.qbTokens?.refresh_token);
-
-    // ✅ Spread to preserve any extra fields, update only token values
     global.qbTokens = {
         ...global.qbTokens,
         access_token: refreshed.access_token,
-        refresh_token: refreshed.refresh_token, // QB rotates this — must update
+        refresh_token: refreshed.refresh_token,
         expires_in: refreshed.expires_in,
     };
-
-    // ✅ await saveTokens — it's async (calls Render API)
     await saveTokens({
         qbTokens: global.qbTokens,
         qbRealmId: global.qbRealmId,
         zohoTokens: global.zohoTokens
     });
-
     console.log('✅ QB token refreshed and saved');
 }
 
@@ -62,20 +58,15 @@ async function refreshQBToken() {
 async function refreshZohoTokenIfNeeded() {
     console.log('🔄 Refreshing Zoho access token...');
     const refreshed = await refreshZohoToken(global.zohoTokens?.refresh_token);
-
-    // ✅ Preserve refresh_token (Zoho doesn't rotate it, but keep it safe)
     global.zohoTokens = {
         ...global.zohoTokens,
         access_token: refreshed.access_token,
     };
-
-    // ✅ await saveTokens
     await saveTokens({
         qbTokens: global.qbTokens,
         qbRealmId: global.qbRealmId,
         zohoTokens: global.zohoTokens
     });
-
     console.log('✅ Zoho token refreshed and saved');
 }
 
@@ -92,11 +83,10 @@ function isTokenExpiredError(err) {
 }
 
 // ─────────────────────────────────────────
-// Sync Customer with auto-retry on 401
+// Sync Customer — Create/Update with retry
 // ─────────────────────────────────────────
 async function syncCustomerWithRetry(entity) {
     try {
-        // ✅ Always read fresh from global — never use captured variables
         await syncSingleCustomer(
             global.qbTokens?.access_token,
             global.qbRealmId,
@@ -104,13 +94,11 @@ async function syncCustomerWithRetry(entity) {
             entity.id
         );
         console.log(`✅ Customer ${entity.id} synced (${entity.operation})`);
-
     } catch (err) {
         if (isTokenExpiredError(err)) {
             console.log(`⚠️ Token expired for Customer ${entity.id} — refreshing...`);
             try {
-                await refreshQBToken(); // ✅ updates global.qbTokens internally
-                // ✅ After refresh, read fresh from global again
+                await refreshQBToken();
                 await syncSingleCustomer(
                     global.qbTokens?.access_token,
                     global.qbRealmId,
@@ -128,11 +116,38 @@ async function syncCustomerWithRetry(entity) {
 }
 
 // ─────────────────────────────────────────
-// Sync Invoice with auto-retry on 401
+// Delete Customer — with Zoho token retry
+// ─────────────────────────────────────────
+async function deleteCustomerWithRetry(entity) {
+    try {
+        await deleteZohoContact(
+            global.zohoTokens?.access_token,
+            entity.id
+        );
+    } catch (err) {
+        if (isTokenExpiredError(err)) {
+            console.log(`⚠️ Zoho token expired for delete Customer ${entity.id} — refreshing...`);
+            try {
+                await refreshZohoTokenIfNeeded();
+                await deleteZohoContact(
+                    global.zohoTokens?.access_token,
+                    entity.id
+                );
+                console.log(`✅ Customer ${entity.id} deleted after token refresh`);
+            } catch (retryErr) {
+                console.error(`❌ Customer delete failed after refresh:`, retryErr.message);
+            }
+        } else {
+            console.error(`❌ Customer delete failed:`, err.message);
+        }
+    }
+}
+
+// ─────────────────────────────────────────
+// Sync Invoice — Create/Update with retry
 // ─────────────────────────────────────────
 async function syncInvoiceWithRetry(entity) {
     try {
-        // ✅ Always read fresh from global — never use captured variables
         await syncSingleInvoice(
             global.qbTokens?.access_token,
             global.qbRealmId,
@@ -140,13 +155,11 @@ async function syncInvoiceWithRetry(entity) {
             entity.id
         );
         console.log(`✅ Invoice ${entity.id} synced (${entity.operation})`);
-
     } catch (err) {
         if (isTokenExpiredError(err)) {
             console.log(`⚠️ Token expired for Invoice ${entity.id} — refreshing...`);
             try {
-                await refreshQBToken(); // ✅ updates global.qbTokens internally
-                // ✅ After refresh, read fresh from global again
+                await refreshQBToken();
                 await syncSingleInvoice(
                     global.qbTokens?.access_token,
                     global.qbRealmId,
@@ -159,6 +172,34 @@ async function syncInvoiceWithRetry(entity) {
             }
         } else {
             console.error(`❌ Invoice sync failed:`, err.message);
+        }
+    }
+}
+
+// ─────────────────────────────────────────
+// Delete Invoice — with Zoho token retry
+// ─────────────────────────────────────────
+async function deleteInvoiceWithRetry(entity) {
+    try {
+        await deleteZohoDeal(
+            global.zohoTokens?.access_token,
+            entity.id
+        );
+    } catch (err) {
+        if (isTokenExpiredError(err)) {
+            console.log(`⚠️ Zoho token expired for delete Invoice ${entity.id} — refreshing...`);
+            try {
+                await refreshZohoTokenIfNeeded();
+                await deleteZohoDeal(
+                    global.zohoTokens?.access_token,
+                    entity.id
+                );
+                console.log(`✅ Invoice ${entity.id} deleted after token refresh`);
+            } catch (retryErr) {
+                console.error(`❌ Invoice delete failed after refresh:`, retryErr.message);
+            }
+        } else {
+            console.error(`❌ Invoice delete failed:`, err.message);
         }
     }
 }
@@ -194,7 +235,6 @@ async function handleWebhook(req, res) {
         const entities = event?.dataChangeEvent?.entities || [];
 
         for (const entity of entities) {
-            // Skip duplicate events
             const eventKey = `${entity.name}-${entity.id}-${entity.operation}-${entity.lastUpdated}`;
             if (isDuplicate(eventKey)) {
                 console.log(`⏭️ Skipping duplicate: ${eventKey}`);
@@ -203,16 +243,24 @@ async function handleWebhook(req, res) {
 
             console.log(`📥 QB Event: ${entity.operation} ${entity.name} ID: ${entity.id}`);
 
-            // Customer
-            if (entity.name === 'Customer' &&
-                (entity.operation === 'Create' || entity.operation === 'Update')) {
-                await syncCustomerWithRetry(entity);
+            // ── Customer ──
+            if (entity.name === 'Customer') {
+                if (entity.operation === 'Create' || entity.operation === 'Update') {
+                    await syncCustomerWithRetry(entity);
+                }
+                if (entity.operation === 'Delete') {
+                    await deleteCustomerWithRetry(entity);
+                }
             }
 
-            // Invoice
-            if (entity.name === 'Invoice' &&
-                (entity.operation === 'Create' || entity.operation === 'Update')) {
-                await syncInvoiceWithRetry(entity);
+            // ── Invoice ──
+            if (entity.name === 'Invoice') {
+                if (entity.operation === 'Create' || entity.operation === 'Update') {
+                    await syncInvoiceWithRetry(entity);
+                }
+                if (entity.operation === 'Delete') {
+                    await deleteInvoiceWithRetry(entity);
+                }
             }
         }
     }

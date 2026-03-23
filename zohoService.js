@@ -71,10 +71,6 @@ async function updateContact(zohoToken, contactId, data) {
 
 // ─────────────────────────────────────────
 // UPSERT Contact — NO DUPLICATES
-// 1. Search by QuickBooks_Customer_ID
-// 2. If not found, search by Email
-// 3. If found → UPDATE existing record
-// 4. If not found → CREATE new record
 // ─────────────────────────────────────────
 async function createZohoContact(zohoToken, customer) {
     const contactData = buildContactData(customer);
@@ -83,10 +79,10 @@ async function createZohoContact(zohoToken, customer) {
     const displayName = customer.DisplayName || customer.Id;
 
     try {
-        // ── Step 1: Search by QB Customer ID ──
+        // Step 1: Search by QB Customer ID
         let existing = await findContactByQBId(zohoToken, qbId);
 
-        // ── Step 2: Fallback search by Email ──
+        // Step 2: Fallback search by Email
         if (!existing && email) {
             existing = await findContactByEmail(zohoToken, email);
             if (existing) {
@@ -95,25 +91,45 @@ async function createZohoContact(zohoToken, customer) {
         }
 
         if (existing) {
-            // ── Step 3: UPDATE existing contact ──
-            const result = await updateContact(zohoToken, existing.id, contactData);
+            // Step 3: UPDATE existing contact
+            await updateContact(zohoToken, existing.id, contactData);
             console.log(`✅ Contact UPDATED: ${displayName} (ID: ${existing.id})`);
             return { action: 'updated' };
-
         } else {
-            // ── Step 4: CREATE new contact ──
+            // Step 4: CREATE new contact
             const res = await axios.post(
                 `${ZOHO_API_BASE}/Contacts`,
                 { data: [contactData] },
                 { headers: authHeader(zohoToken) }
             );
-            const result = res.data?.data?.[0];
             console.log(`✅ Contact CREATED: ${displayName}`);
             return { action: 'created' };
         }
 
     } catch (err) {
         console.error('❌ Zoho Contact Error:', err.response?.data || err.message);
+        throw err;
+    }
+}
+
+// ─────────────────────────────────────────
+// DELETE Contact from Zoho by QB Customer ID
+// ─────────────────────────────────────────
+async function deleteZohoContact(zohoToken, qbCustomerId) {
+    try {
+        const existing = await findContactByQBId(zohoToken, qbCustomerId);
+        if (!existing) {
+            console.log(`⚠️ No Zoho contact found for QB Customer ID: ${qbCustomerId} — skipping delete`);
+            return { action: 'not_found' };
+        }
+        await axios.delete(
+            `${ZOHO_API_BASE}/Contacts/${existing.id}`,
+            { headers: authHeader(zohoToken) }
+        );
+        console.log(`✅ Contact DELETED from Zoho: QB Customer ID ${qbCustomerId}`);
+        return { action: 'deleted' };
+    } catch (err) {
+        console.error('❌ Zoho Contact Delete Error:', err.response?.data || err.message);
         throw err;
     }
 }
@@ -155,7 +171,6 @@ async function createZohoDeal(zohoToken, invoice) {
     const docNumber = invoice.DocNumber || invoice.Id;
 
     try {
-        // Search by QB Invoice ID first
         const existing = await findDealByQBId(zohoToken, qbId);
 
         if (existing) {
@@ -167,7 +182,6 @@ async function createZohoDeal(zohoToken, invoice) {
             );
             console.log(`✅ Deal UPDATED: Invoice #${docNumber}`);
             return { action: 'updated' };
-
         } else {
             // CREATE new deal
             await axios.post(
@@ -185,4 +199,31 @@ async function createZohoDeal(zohoToken, invoice) {
     }
 }
 
-module.exports = { createZohoContact, createZohoDeal };
+// ─────────────────────────────────────────
+// DELETE Deal from Zoho by QB Invoice ID
+// ─────────────────────────────────────────
+async function deleteZohoDeal(zohoToken, qbInvoiceId) {
+    try {
+        const existing = await findDealByQBId(zohoToken, qbInvoiceId);
+        if (!existing) {
+            console.log(`⚠️ No Zoho deal found for QB Invoice ID: ${qbInvoiceId} — skipping delete`);
+            return { action: 'not_found' };
+        }
+        await axios.delete(
+            `${ZOHO_API_BASE}/Deals/${existing.id}`,
+            { headers: authHeader(zohoToken) }
+        );
+        console.log(`✅ Deal DELETED from Zoho: QB Invoice ID ${qbInvoiceId}`);
+        return { action: 'deleted' };
+    } catch (err) {
+        console.error('❌ Zoho Deal Delete Error:', err.response?.data || err.message);
+        throw err;
+    }
+}
+
+module.exports = {
+    createZohoContact,
+    deleteZohoContact,
+    createZohoDeal,
+    deleteZohoDeal
+};
