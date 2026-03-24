@@ -6,17 +6,18 @@ const axios = require("axios");
 const TOKEN_FILE = path.join(__dirname, "tokens.json");
 
 async function saveTokens(data) {
-    // 1. Always save to file (works locally)
+    // 1. Always save to file
     try {
         fs.writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2));
+        console.log("✅ Tokens saved to tokens.json");
     } catch (err) {
         console.warn("⚠️ Could not save tokens.json:", err.message);
     }
 
-    // 2. On Render — update env vars via API so they survive restarts
+    // 2. Update Render env vars
     if (process.env.RENDER_API_KEY && process.env.RENDER_SERVICE_ID) {
         try {
-            await axios.put(
+            const response = await axios.put(
                 `https://api.render.com/v1/services/${process.env.RENDER_SERVICE_ID}/env-vars`,
                 [
                     { key: 'QB_ACCESS_TOKEN', value: data.qbTokens?.access_token || '' },
@@ -32,10 +33,14 @@ async function saveTokens(data) {
                     }
                 }
             );
-            console.log("✅ Tokens saved to Render env vars");
+            console.log("✅ Tokens saved to Render env vars — status:", response.status);
         } catch (err) {
-            console.warn("⚠️ Could not update Render env vars:", err.message);
+            // ✅ Log full error so we can see what's failing
+            console.error("❌ Could not update Render env vars:", err.response?.data || err.message);
+            console.error("❌ Render API status:", err.response?.status);
         }
+    } else {
+        console.warn("⚠️ RENDER_API_KEY or RENDER_SERVICE_ID not set — tokens not saved to Render");
     }
 }
 

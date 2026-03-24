@@ -35,21 +35,36 @@ function verifySignature(rawBody, signature) {
 // ─────────────────────────────────────────
 // Refresh QB token and save to global + file + Render
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────
+// Refresh QB token and save to global + file + Render
+// ─────────────────────────────────────────
 async function refreshQBToken() {
     console.log('🔄 Refreshing QB access token...');
-    const refreshed = await refreshToken(global.qbTokens?.refresh_token);
-    global.qbTokens = {
-        ...global.qbTokens,
-        access_token: refreshed.access_token,
-        refresh_token: refreshed.refresh_token,
-        expires_in: refreshed.expires_in,
-    };
-    await saveTokens({
-        qbTokens: global.qbTokens,
-        qbRealmId: global.qbRealmId,
-        zohoTokens: global.zohoTokens
-    });
-    console.log('✅ QB token refreshed and saved');
+    try {
+        const refreshed = await refreshToken(global.qbTokens?.refresh_token);
+        global.qbTokens = {
+            ...global.qbTokens,
+            access_token: refreshed.access_token,
+            refresh_token: refreshed.refresh_token,
+            expires_in: refreshed.expires_in,
+        };
+        await saveTokens({
+            qbTokens: global.qbTokens,
+            qbRealmId: global.qbRealmId,
+            zohoTokens: global.zohoTokens
+        });
+        console.log('✅ QB token refreshed and saved');
+    } catch (err) {
+        // ✅ If refresh token is invalid — clear tokens and alert
+        if (err.message?.includes('invalid') ||
+            err.message?.includes('Authorize') ||
+            err.message?.includes('401')) {
+            console.error('🚨 QB refresh token EXPIRED — re-authorization required!');
+            console.error('🚨 Visit https://qb-zoho-extension.onrender.com to reconnect QuickBooks');
+            global.qbTokens = null; // clear so status shows disconnected
+        }
+        throw err;
+    }
 }
 
 // ─────────────────────────────────────────
